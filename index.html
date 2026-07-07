@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mia Clean - Sistema de Gestión de Inventario</title>
+
+<link href="https://static.balsamiq.com/prototype/v1/css/noto-fonts.css" rel="stylesheet"/>
+<link href="https://static.balsamiq.com/prototype/v1/css/material-symbols-outlined.css" rel="stylesheet"/>
+
+<script src="https://static.balsamiq.com/prototype/v1/js/tailwindcss-3.4.17.js"></script>
+<script>
+    tailwind.config = {
+        darkMode: "class",
+        theme: {
+            extend: {
+                colors: {
+                    "primary": "#2563eb",
+                    "secondary": "#dc2626",
+                    "background": "#ffffff",
+                    "surface": "#f9fafb",
+                    "border": "#d1d5db",
+                    "text-main": "#000000",
+                    "text-muted": "#374151",
+                },
+                borderRadius: {
+                    "theme": "0.25rem",
+                    "theme-sm": "calc(0.25rem * 0.5)",
+                    "theme-lg": "calc(0.25rem * 1.5)",
+                },
+                boxShadow: {
+                    "theme": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+                },
+                fontFamily: {
+                    "display": ["Noto Serif", "serif"],
+                    "body": ["Noto Sans", "sans-serif"],
+                    "sans": ["Noto Sans", "sans-serif"],
+                },
+            },
+        },
+    }
+</script>
+
+<!-- Cliente de Supabase (permite leer/escribir en la base de datos en la nube) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script defer src="https://static.balsamiq.com/prototype/v1/js/alpinejs-3.14.9.min.js"></script>
+
+<style>
+    [x-cloak] { display: none !important; }
+    .font-display { font-family: 'Noto Serif', serif; }
+    .font-body { font-family: 'Noto Sans', sans-serif; }
+    @media print {
+        aside, header, .no-print { display: none !important; }
+    }
+</style>
+</head>
+<body class="bg-background text-text-main font-body antialiased min-h-screen" x-data="app()" x-init="init()">
+
+<!-- ==================== PANTALLA DE CONFIGURACIÓN (si faltan las credenciales de Supabase) ==================== -->
+<div x-show="!supabaseConfigured" x-cloak class="min-h-screen flex items-center justify-center p-4 bg-surface">
+    <div class="bg-background w-full max-w-xl p-8 rounded-theme-lg shadow-theme border border-border">
+        <h1 class="text-2xl font-bold text-primary mb-2">Configura la conexión a Supabase</h1>
+        <p class="text-sm text-text-muted mb-6">Para que Mia Clean guarde los datos en la nube y se vean actualizados en cualquier dispositivo, completa estos dos valores en el código, dentro de la etiqueta <code>&lt;script&gt;</code> al final del archivo:</p>
+        <pre class="bg-gray-900 text-gray-100 text-xs p-4 rounded-theme mb-6 overflow-x-auto">const SUPABASE_URL = 'https://xxxxxxxx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOi...tu-anon-key...';</pre>
+        <ol class="list-decimal list-inside text-sm text-text-muted space-y-2 mb-6">
+            <li>Crea un proyecto gratis en <span class="font-medium">supabase.com</span>.</li>
+            <li>Ejecuta el script <span class="font-medium">crear_tablas_supabase.sql</span> en el SQL Editor de tu proyecto.</li>
+            <li>Ve a Project Settings &gt; API y copia el "Project URL" y la "anon public key".</li>
+            <li>Pégalos en las dos constantes de arriba y guarda/recarga este archivo.</li>
+        </ol>
+        <p x-show="connectionError" x-text="connectionError" class="text-sm text-secondary font-medium"></p>
+    </div>
+</div>
+
+<!-- ==================== LOGIN ==================== -->
+<div x-show="supabaseConfigured && !loggedIn" x-cloak class="min-h-screen flex items-center justify-center p-4 bg-surface">
+    <div class="bg-background w-full max-w-md p-8 rounded-theme-lg shadow-theme border border-border">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                <span class="material-symbols-outlined text-4xl">cleaning_services</span>
+            </div>
+            <h1 class="text-3xl font-bold text-primary font-display mb-1">Mia Clean</h1>
+            <p class="text-sm text-text-muted italic">Sistema de Gestión de Inventario</p>
+            <p class="text-xs mt-2" :class="connected ? 'text-green-600' : 'text-red-600'">
+                <span class="material-symbols-outlined align-middle text-sm">cloud</span>
+                <span x-text="connected ? 'Conectado a la base de datos' : 'Sin conexión a la base de datos'"></span>
+            </p>
+        </div>
+
+        <form class="space-y-6" @submit.prevent="login()">
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-2">Usuario o Correo</label>
+                <div class="relative">
+                    <input type="text" x-model="loginForm.username" required placeholder="admin@miaclean.com"
+                           class="w-full border border-border rounded-theme px-4 py-2 pl-10 focus:ring-2 focus:ring-primary outline-none transition-shadow">
+                    <span class="material-symbols-outlined absolute left-3 top-2.5 text-text-muted text-xl">person</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-2">Contraseña</label>
+                <div class="relative">
+                    <input type="password" x-model="loginForm.password" required placeholder="••••••••"
+                           class="w-full border border-border rounded-theme px-4 py-2 pl-10 focus:ring-2 focus:ring-primary outline-none transition-shadow">
+                    <span class="material-symbols-outlined absolute left-3 top-2.5 text-text-muted text-xl">lock</span>
+                </div>
+            </div>
+
+            <p x-show="loginError" x-text="loginError" class="text-sm text-secondary font-medium"></p>
+
+            <button type="submit" :disabled="loading"
+                    class="w-full bg-primary text-white px-4 py-3 rounded-theme shadow-theme hover:opacity-90 transition-opacity font-medium disabled:opacity-50">
+                <span x-show="!loading">Ingresar al Sistema</span>
+                <span x-show="loading">Ingresando...</span>
+            </button>
+        </form>
+
+        <div class="mt-6 pt-6 border-t border-border text-xs text-text-muted space-y-1">
+            <p class="font-bold">Usuarios de prueba (creados por el script SQL):</p>
+            <p>Administrador &mdash; admin@miaclean.com / admin123</p>
+            <p>Vendedor &mdash; vendedor@miaclean.com / venta123</p>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div x-show="supabaseConfigured && loggedIn" x-cloak class="flex h-screen bg-background text-text-main overflow-hidden">
+
+    <aside class="w-64 bg-surface border-r border-border flex flex-col flex-shrink-0">
+        <div class="p-6 border-b border-border">
+            <h1 class="text-xl font-bold text-primary">Mia Clean</h1>
+            <p class="text-xs text-text-muted italic">Sistema de Gestión de Inventario</p>
+        </div>
+
+        <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
+            <button @click="page = 'dashboard'" :class="page === 'dashboard' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">dashboard</span>
+                <span class="font-medium">Panel de Control</span>
+            </button>
+
+            <button x-show="can('productos')" @click="page = 'products'" :class="page === 'products' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <span class="font-medium">Productos</span>
+            </button>
+
+            <button @click="page = 'movements'" :class="page === 'movements' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">swap_horiz</span>
+                <span class="font-medium">Movimientos</span>
+            </button>
+
+            <button @click="page = 'stock_inquiry'" :class="page === 'stock_inquiry' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">search</span>
+                <span class="font-medium">Consulta de Stock</span>
+            </button>
+
+            <button x-show="can('reportes')" @click="page = 'reports'" :class="page === 'reports' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">analytics</span>
+                <span class="font-medium">Reportes</span>
+            </button>
+
+            <button x-show="can('usuarios')" @click="page = 'users'" :class="page === 'users' ? 'bg-primary/10 text-primary' : 'text-text-main hover:bg-gray-100'" class="w-full flex items-center gap-3 px-4 py-3 rounded-theme transition-colors">
+                <span class="material-symbols-outlined">manage_accounts</span>
+                <span class="font-medium">Gestión de Usuarios</span>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-border">
+            <p class="text-xs mb-3 px-2" :class="connected ? 'text-green-600' : 'text-red-600'">
+                <span class="material-symbols-outlined align-middle text-sm">cloud</span>
+                <span x-text="connected ? 'Sincronizado' : 'Sin conexión'"></span>
+            </p>
+            <div class="flex items-center justify-between mb-2 px-2">
+                <span class="text-sm font-medium" x-text="currentUser.nombre"></span>
+            </div>
+            <div class="flex items-center justify-between px-2 mb-4">
+                <span class="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-theme-sm" x-text="currentUser.rol"></span>
+                <button @click="logout()" class="text-xs bg-gray-200 px-2 py-1 rounded-theme hover:bg-gray-300 transition-colors">Cerrar Sesión</button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+        <header class="h-16 bg-surface border-b border-border flex items-center justify-between px-8 flex-shrink-0">
+            <h2 class="text-lg font-semibold" x-text="pageTitle()"></h2>
+            <div class="flex items-center gap-4">
+                <span class="material-symbols-outlined text-text-muted" :class="loading ? 'animate-spin' : ''" x-text="loading ? 'progress_activity' : 'notifications'"></span>
+                <div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs" x-text="initials(currentUser.nombre)"></div>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-8">
+
+            <!-- ===== DASHBOARD ===== -->
+            <div x-show="page === 'dashboard'">
+                <div class="mb-8">
+                    <h3 class="text-2xl font-bold mb-2">Panel de Control</h3>
+                    <p class="text-text-muted max-w-3xl">Vista general de métricas clave de inventario, incluyendo productos totales, alertas de bajo stock, ventas mensuales y movimientos recientes.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                        <p class="text-sm text-text-muted mb-1">Total de Productos</p>
+                        <p class="text-3xl font-bold" x-text="products.length"></p>
+                    </div>
+                    <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                        <p class="text-sm text-text-muted mb-1">Alertas de Bajo Stock</p>
+                        <p class="text-3xl font-bold text-red-600" x-text="lowStockProducts().length"></p>
+                    </div>
+                    <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                        <p class="text-sm text-text-muted mb-1">Ventas del Mes</p>
+                        <p class="text-3xl font-bold text-green-600" x-text="formatCLP(monthlySales())"></p>
+                    </div>
+                    <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                        <p class="text-sm text-text-muted mb-1">Movimientos Registrados</p>
+                        <p class="text-3xl font-bold" x-text="movements.length"></p>
+                    </div>
+                </div>
+
+                <div x-show="lowStockProducts().length > 0" class="bg-red-50 border border-red-200 rounded-theme-lg p-4 mb-8">
+                    <p class="text-sm text-red-700"><span class="font-bold">Atención:</span> hay <span x-text="lowStockProducts().length"></span> producto(s) en o bajo el nivel crítico de stock.</p>
+                </div>
+
+                <div class="bg-surface rounded-theme-lg shadow-theme border border-border overflow-hidden">
+                    <div class="px-6 py-4 border-b border-border flex justify-between items-center">
+                        <h4 class="font-bold text-lg">Movimientos Recientes</h4>
+                    </div>
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-text-muted">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Fecha</th>
+                                <th class="px-6 py-3 font-semibold">Producto</th>
+                                <th class="px-6 py-3 font-semibold">Tipo</th>
+                                <th class="px-6 py-3 font-semibold">Cantidad</th>
+                                <th class="px-6 py-3 font-semibold">Usuario</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <template x-for="m in recentMovements()" :key="m.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-6 py-4 text-sm" x-text="m.fecha"></td>
+                                    <td class="px-6 py-4 text-sm font-medium" x-text="productName(m.producto_id)"></td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span :class="m.tipo === 'Entrada' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" class="px-2 py-1 rounded-theme-sm text-xs" x-text="m.tipo"></span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm" x-text="m.cantidad"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="m.usuario"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="movements.length === 0">
+                                <td colspan="5" class="px-6 py-6 text-center text-sm text-text-muted">Aún no hay movimientos registrados.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== PRODUCTOS ===== -->
+            <div x-show="page === 'products' && can('productos')">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-bold">Gestión de Productos</h3>
+                    <button @click="openAddProduct()" class="bg-primary text-white px-4 py-2 rounded-theme shadow-theme hover:opacity-90 flex items-center gap-2">
+                        <span class="material-symbols-outlined">add</span> Añadir Nuevo Producto
+                    </button>
+                </div>
+
+                <div class="flex gap-4 mb-6">
+                    <div class="flex-1 relative">
+                        <input type="text" x-model="productSearch" placeholder="Buscar productos..." class="w-full border border-border rounded-theme px-4 py-2 pl-10 focus:ring-2 focus:ring-primary outline-none">
+                        <span class="material-symbols-outlined absolute left-3 top-2.5 text-text-muted">search</span>
+                    </div>
+                </div>
+
+                <div class="bg-surface rounded-theme-lg shadow-theme border border-border overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-text-muted">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Nombre</th>
+                                <th class="px-6 py-3 font-semibold">Marca</th>
+                                <th class="px-6 py-3 font-semibold">Categoría</th>
+                                <th class="px-6 py-3 font-semibold">Precio</th>
+                                <th class="px-6 py-3 font-semibold">Stock Actual</th>
+                                <th class="px-6 py-3 font-semibold">Stock Crítico</th>
+                                <th class="px-6 py-3 font-semibold text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <template x-for="p in filteredProducts()" :key="p.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-6 py-4 text-sm font-medium" x-text="p.nombre"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.marca"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.categoria"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="formatCLP(p.precio)"></td>
+                                    <td class="px-6 py-4 text-sm" :class="p.stock <= p.stock_critico ? 'text-red-600 font-bold' : ''" x-text="p.stock"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.stock_critico"></td>
+                                    <td class="px-6 py-4 text-sm text-right space-x-2">
+                                        <button @click="openEditProduct(p)" class="text-primary hover:underline">Editar</button>
+                                        <button @click="confirmDelete = {type:'product', id:p.id, name:p.nombre}" class="text-red-600 hover:underline">Eliminar</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="filteredProducts().length === 0">
+                                <td colspan="7" class="px-6 py-6 text-center text-sm text-text-muted">No se encontraron productos.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== MOVIMIENTOS ===== -->
+            <div x-show="page === 'movements'">
+                <h3 class="text-2xl font-bold mb-6" x-text="editingMovementId ? 'Editar Movimiento' : 'Registro de Movimientos'"></h3>
+
+                <div class="bg-gray-50 p-8 rounded-theme-lg border border-border mb-8">
+                    <h4 class="text-xl font-bold mb-6" x-text="editingMovementId ? 'Editar Movimiento' : 'Registrar Nuevo Movimiento'"></h4>
+                    <p x-show="movementError" x-text="movementError" class="text-sm text-secondary font-medium mb-4"></p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-bold text-text-muted mb-2">Selección de Producto:</label>
+                            <select x-model.number="movementForm.producto_id" class="w-full border border-border rounded-theme px-4 py-2 bg-white">
+                                <option value="">Seleccione un producto</option>
+                                <template x-for="p in products" :key="p.id">
+                                    <option :value="p.id" x-text="p.nombre + ' (stock: ' + p.stock + ')'"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-text-muted mb-2">Cantidad:</label>
+                            <input type="number" min="1" x-model.number="movementForm.cantidad" placeholder="Ingrese cantidad" class="w-full border border-border rounded-theme px-4 py-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-text-muted mb-2">Tipo de Movimiento:</label>
+                            <select x-model="movementForm.tipo" class="w-full border border-border rounded-theme px-4 py-2 bg-white">
+                                <option value="Entrada">Entrada (Compra/Producción)</option>
+                                <option value="Salida">Salida (Venta)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-text-muted mb-2">Fecha:</label>
+                            <input type="date" x-model="movementForm.fecha" class="w-full border border-border rounded-theme px-4 py-2">
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-end gap-3">
+                        <button x-show="editingMovementId" @click="cancelMovementEdit()" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300">Cancelar</button>
+                        <button @click="saveMovement()" :disabled="loading" class="bg-primary text-white px-8 py-2 rounded-theme shadow-theme hover:opacity-90 disabled:opacity-50" x-text="editingMovementId ? 'Guardar Cambios' : 'Registrar Movimiento'"></button>
+                    </div>
+                </div>
+
+                <div class="bg-surface rounded-theme-lg shadow-theme border border-border overflow-hidden">
+                    <div class="px-6 py-4 border-b border-border">
+                        <h4 class="font-bold text-lg">Historial de Movimientos</h4>
+                    </div>
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-text-muted">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Nombre del Producto</th>
+                                <th class="px-6 py-3 font-semibold">Tipo</th>
+                                <th class="px-6 py-3 font-semibold">Cantidad</th>
+                                <th class="px-6 py-3 font-semibold">Fecha</th>
+                                <th class="px-6 py-3 font-semibold">Usuario</th>
+                                <th class="px-6 py-3 font-semibold text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <template x-for="m in movements.slice().reverse()" :key="m.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-6 py-4 text-sm" x-text="productName(m.producto_id)"></td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span :class="m.tipo === 'Entrada' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" class="px-2 py-1 rounded-theme-sm text-xs" x-text="m.tipo"></span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm" x-text="m.cantidad"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="m.fecha"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="m.usuario"></td>
+                                    <td class="px-6 py-4 text-sm text-right space-x-2">
+                                        <button @click="startMovementEdit(m)" class="text-primary hover:underline">Editar</button>
+                                        <button @click="confirmDelete = {type:'movement', id:m.id, name: productName(m.producto_id) + ' ('+m.tipo+')'}" class="text-red-600 hover:underline">Eliminar</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="movements.length === 0">
+                                <td colspan="6" class="px-6 py-6 text-center text-sm text-text-muted">Aún no hay movimientos registrados.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== CONSULTA DE STOCK ===== -->
+            <div x-show="page === 'stock_inquiry'">
+                <h3 class="text-2xl font-bold mb-6">Consulta de Stock en Tiempo Real</h3>
+
+                <div class="flex gap-4 mb-8">
+                    <div class="flex-1 relative">
+                        <input type="text" x-model="stockSearch" placeholder="Buscar producto..." class="w-full border border-border rounded-theme px-4 py-2 pl-10 focus:ring-2 focus:ring-primary outline-none">
+                        <span class="material-symbols-outlined absolute left-3 top-2.5 text-text-muted">search</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div>
+                        <label class="block text-sm font-bold text-text-muted mb-2">Filtro de Categoría</label>
+                        <select x-model="stockCategoryFilter" class="w-full border border-border rounded-theme px-4 py-2 bg-gray-50">
+                            <option>Todas las Categorías</option>
+                            <template x-for="c in categories()" :key="c"><option x-text="c"></option></template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-text-muted mb-2">Filtro de Marca</label>
+                        <select x-model="stockBrandFilter" class="w-full border border-border rounded-theme px-4 py-2 bg-gray-50">
+                            <option>Todas las Marcas</option>
+                            <template x-for="b in brands()" :key="b"><option x-text="b"></option></template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-text-muted mb-2">Nivel de Stock</label>
+                        <select x-model="stockLevelFilter" class="w-full border border-border rounded-theme px-4 py-2 bg-gray-50">
+                            <option>Todos los Niveles</option>
+                            <option>Suficiente</option>
+                            <option>Bajo</option>
+                            <option>Crítico</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-surface rounded-theme-lg shadow-theme border border-border overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-text-muted">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Nombre del Producto</th>
+                                <th class="px-6 py-3 font-semibold">Marca</th>
+                                <th class="px-6 py-3 font-semibold">Categoría</th>
+                                <th class="px-6 py-3 font-semibold">Stock Actual</th>
+                                <th class="px-6 py-3 font-semibold">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <template x-for="p in stockFiltered()" :key="p.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-6 py-4 text-sm" x-text="p.nombre"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.marca"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.categoria"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="p.stock"></td>
+                                    <td class="px-6 py-4 text-sm font-bold" :class="stockStatusClass(p)" x-text="stockStatus(p)"></td>
+                                </tr>
+                            </template>
+                            <tr x-show="stockFiltered().length === 0">
+                                <td colspan="5" class="px-6 py-6 text-center text-sm text-text-muted">No se encontraron productos.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ===== REPORTES ===== -->
+            <div x-show="page === 'reports' && can('reportes')">
+                <h3 class="text-2xl font-bold mb-6">Módulo de Reportes de Ventas</h3>
+
+                <div class="bg-surface p-6 rounded-theme-lg border border-border mb-8 no-print">
+                    <h4 class="text-lg font-bold mb-4">Seleccionar Rango de Fechas para Reporte de Ventas</h4>
+                    <div class="flex items-center gap-4 mb-2 flex-wrap">
+                        <input type="date" x-model="reportFrom" class="border border-border rounded-theme px-4 py-2">
+                        <span class="text-text-muted">hasta</span>
+                        <input type="date" x-model="reportTo" class="border border-border rounded-theme px-4 py-2">
+                        <button @click="generateReport()" class="bg-primary text-white px-6 py-2 rounded-theme shadow-theme hover:opacity-90 ml-4">Generar Reporte de Ventas</button>
+                    </div>
+                    <p x-show="reportError" x-text="reportError" class="text-sm text-secondary font-medium mt-2"></p>
+                </div>
+
+                <template x-if="reportGenerated">
+                    <div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                                <p class="text-sm text-text-muted mb-1">Ingresos por Ventas</p>
+                                <p class="text-2xl font-bold text-green-600" x-text="formatCLP(reportTotals().revenue)"></p>
+                            </div>
+                            <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                                <p class="text-sm text-text-muted mb-1">Unidades Vendidas</p>
+                                <p class="text-2xl font-bold" x-text="reportTotals().units"></p>
+                            </div>
+                            <div class="bg-surface p-6 rounded-theme-lg shadow-theme border border-border">
+                                <p class="text-sm text-text-muted mb-1">Productos Distintos Vendidos</p>
+                                <p class="text-2xl font-bold" x-text="reportRows.length"></p>
+                            </div>
+                        </div>
+
+                        <div class="bg-surface rounded-theme-lg border border-border p-8 mb-8">
+                            <h4 class="text-lg font-bold mb-8">Ventas por Producto</h4>
+                            <div class="space-y-4" x-show="reportRows.length > 0">
+                                <template x-for="row in reportRows" :key="row.nombre">
+                                    <div>
+                                        <div class="flex justify-between text-sm mb-1">
+                                            <span class="font-medium" x-text="row.nombre"></span>
+                                            <span class="text-text-muted" x-text="row.unidades + ' u. · ' + formatCLP(row.total)"></span>
+                                        </div>
+                                        <div class="w-full bg-gray-100 rounded-theme h-4">
+                                            <div class="bg-primary h-4 rounded-theme" :style="'width:' + reportBarWidth(row) + '%'"></div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                            <p x-show="reportRows.length === 0" class="text-text-muted text-center py-8">No hubo ventas (salidas) registradas en el rango de fechas seleccionado.</p>
+                        </div>
+
+                        <div class="flex gap-4 no-print">
+                            <button @click="window.print()" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300 transition-colors flex items-center gap-2">
+                                <span class="material-symbols-outlined">picture_as_pdf</span> Imprimir / Exportar a PDF
+                            </button>
+                            <button @click="exportCSV()" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300 transition-colors flex items-center gap-2">
+                                <span class="material-symbols-outlined">table_view</span> Exportar a CSV (Excel)
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- ===== USUARIOS ===== -->
+            <div x-show="page === 'users' && can('usuarios')">
+                <div class="flex justify-between items-center mb-8">
+                    <h3 class="text-2xl font-bold">Gestión de Usuarios</h3>
+                    <button @click="openAddUser()" class="bg-primary text-white px-4 py-2 rounded-theme shadow-theme hover:opacity-90 flex items-center gap-2">
+                        <span class="material-symbols-outlined">add</span> Añadir Usuario
+                    </button>
+                </div>
+
+                <div class="flex gap-4 mb-8">
+                    <div class="flex-1 relative">
+                        <input type="text" x-model="userSearch" placeholder="Buscar usuarios..." class="w-full border border-border rounded-theme px-4 py-2 pl-10 focus:ring-2 focus:ring-primary outline-none">
+                        <span class="material-symbols-outlined absolute left-3 top-2.5 text-text-muted">search</span>
+                    </div>
+                </div>
+
+                <div class="bg-surface rounded-theme-lg shadow-theme border border-border overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 text-xs uppercase text-text-muted">
+                            <tr>
+                                <th class="px-6 py-3 font-semibold">Nombre</th>
+                                <th class="px-6 py-3 font-semibold">Usuario</th>
+                                <th class="px-6 py-3 font-semibold">Rol</th>
+                                <th class="px-6 py-3 font-semibold">Estado</th>
+                                <th class="px-6 py-3 font-semibold text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <template x-for="u in filteredUsers()" :key="u.id">
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-6 py-4 text-sm font-medium" x-text="u.nombre"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="u.username"></td>
+                                    <td class="px-6 py-4 text-sm" x-text="u.rol"></td>
+                                    <td class="px-6 py-4 text-sm">
+                                        <span :class="u.estado === 'Activo' ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-600'" class="px-2 py-1 rounded-theme-sm text-xs" x-text="u.estado"></span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-right space-x-2">
+                                        <button @click="openEditUser(u)" class="text-primary hover:underline">Editar</button>
+                                        <button @click="confirmDelete = {type:'user', id:u.id, name:u.nombre}" class="text-red-600 hover:underline">Eliminar</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<!-- ==================== MODAL: PRODUCTO ==================== -->
+<div x-show="showProductModal" x-cloak class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-background rounded-theme-lg shadow-theme border border-border w-full max-w-lg p-8" @click.outside="showProductModal = false">
+        <h3 class="text-xl font-bold mb-6" x-text="editingProduct ? 'Editar Producto' : 'Añadir Nuevo Producto'"></h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-1">Nombre</label>
+                <input type="text" x-model="productForm.nombre" class="w-full border border-border rounded-theme px-4 py-2">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Marca</label>
+                    <input type="text" x-model="productForm.marca" class="w-full border border-border rounded-theme px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Categoría</label>
+                    <input type="text" x-model="productForm.categoria" class="w-full border border-border rounded-theme px-4 py-2">
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Precio (CLP)</label>
+                    <input type="number" min="0" x-model.number="productForm.precio" class="w-full border border-border rounded-theme px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Stock Inicial</label>
+                    <input type="number" min="0" x-model.number="productForm.stock" class="w-full border border-border rounded-theme px-4 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Stock Crítico</label>
+                    <input type="number" min="0" x-model.number="productForm.stock_critico" class="w-full border border-border rounded-theme px-4 py-2">
+                </div>
+            </div>
+            <p x-show="productError" x-text="productError" class="text-sm text-secondary font-medium"></p>
+        </div>
+        <div class="mt-8 flex justify-end gap-3">
+            <button @click="showProductModal = false" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300">Cancelar</button>
+            <button @click="saveProduct()" :disabled="loading" class="bg-primary text-white px-6 py-2 rounded-theme shadow-theme hover:opacity-90 disabled:opacity-50">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL: USUARIO ==================== -->
+<div x-show="showUserModal" x-cloak class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-background rounded-theme-lg shadow-theme border border-border w-full max-w-lg p-8" @click.outside="showUserModal = false">
+        <h3 class="text-xl font-bold mb-6" x-text="editingUser ? 'Editar Usuario' : 'Añadir Usuario'"></h3>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-1">Nombre Completo</label>
+                <input type="text" x-model="userForm.nombre" class="w-full border border-border rounded-theme px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-1">Usuario o Correo</label>
+                <input type="text" x-model="userForm.username" class="w-full border border-border rounded-theme px-4 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-bold text-text-muted mb-1">Contraseña</label>
+                <input type="text" x-model="userForm.password" placeholder="Dejar en blanco si no se cambia" class="w-full border border-border rounded-theme px-4 py-2">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Rol</label>
+                    <select x-model="userForm.rol" class="w-full border border-border rounded-theme px-4 py-2 bg-white">
+                        <option>Administrador</option>
+                        <option>Vendedor</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-text-muted mb-1">Estado</label>
+                    <select x-model="userForm.estado" class="w-full border border-border rounded-theme px-4 py-2 bg-white">
+                        <option>Activo</option>
+                        <option>Inactivo</option>
+                    </select>
+                </div>
+            </div>
+            <p x-show="userError" x-text="userError" class="text-sm text-secondary font-medium"></p>
+        </div>
+        <div class="mt-8 flex justify-end gap-3">
+            <button @click="showUserModal = false" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300">Cancelar</button>
+            <button @click="saveUser()" :disabled="loading" class="bg-primary text-white px-6 py-2 rounded-theme shadow-theme hover:opacity-90 disabled:opacity-50">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== MODAL: CONFIRMAR ELIMINACIÓN ==================== -->
+<div x-show="confirmDelete" x-cloak class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div class="bg-background rounded-theme-lg shadow-theme border border-border w-full max-w-sm p-8">
+        <h3 class="text-lg font-bold mb-3">Confirmar Eliminación</h3>
+        <p class="text-sm text-text-muted mb-6">¿Está seguro que desea eliminar <span class="font-bold" x-text="confirmDelete && confirmDelete.name"></span>? Esta acción no se puede deshacer.</p>
+        <div class="flex justify-end gap-3">
+            <button @click="confirmDelete = null" class="bg-gray-200 text-text-main px-6 py-2 rounded-theme hover:bg-gray-300">Cancelar</button>
+            <button @click="performDelete()" :disabled="loading" class="bg-secondary text-white px-6 py-2 rounded-theme shadow-theme hover:opacity-90 disabled:opacity-50">Eliminar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// =====================================================================
+// CONFIGURACIÓN DE SUPABASE
+// Reemplaza estos dos valores por los de TU proyecto de Supabase:
+// Project Settings > API > "Project URL" y "anon public" key.
+// =====================================================================
+const SUPABASE_URL = 'https://bbzgnudxeexuqdipvglt.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_izw5kTbNw8-DfF6a0KMhKQ_e8K16vuF';
+
+let supabaseClient = null;
+
+function app() {
+    return {
+        // ---------- configuración / conexión ----------
+        supabaseConfigured: !SUPABASE_URL.includes('TU_SUPABASE_URL_AQUI') && !SUPABASE_ANON_KEY.includes('TU_SUPABASE_ANON_KEY_AQUI'),
+        connected: false,
+        connectionError: '',
+        loading: false,
+
+        // ---------- estado de sesión ----------
+        loggedIn: false,
+        loginError: '',
+        loginForm: { username: '', password: '' },
+        currentUser: null,
+        page: 'dashboard',
+
+        // ---------- datos (se cargan desde Supabase) ----------
+        users: [],
+        products: [],
+        movements: [],
+
+        // ---------- modales / formularios ----------
+        showProductModal: false, editingProduct: null, productForm: {}, productError: '',
+        showUserModal: false, editingUser: null, userForm: {}, userError: '',
+        movementForm: { producto_id: '', cantidad: '', tipo: 'Entrada', fecha: '' },
+        editingMovementId: null, movementError: '',
+        confirmDelete: null,
+
+        // ---------- búsqueda / filtros ----------
+        productSearch: '', userSearch: '', stockSearch: '',
+        stockCategoryFilter: 'Todas las Categorías', stockBrandFilter: 'Todas las Marcas', stockLevelFilter: 'Todos los Niveles',
+
+        // ---------- reportes ----------
+        reportFrom: '', reportTo: '', reportGenerated: false, reportRows: [], reportError: '',
+
+        async init() {
+            this.movementForm.fecha = new Date().toISOString().slice(0, 10);
+            if (!this.supabaseConfigured) return;
+            try {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                await this.loadAll();
+                this.connected = true;
+            } catch (e) {
+                this.connected = false;
+                this.connectionError = 'No se pudo conectar a Supabase: ' + e.message;
+            }
+        },
+
+        async loadAll() {
+            const [prodRes, userRes, movRes] = await Promise.all([
+                supabaseClient.from('productos').select('*').order('id'),
+                supabaseClient.from('usuarios').select('*').order('id'),
+                supabaseClient.from('movimientos').select('*').order('id'),
+            ]);
+            if (prodRes.error || userRes.error || movRes.error) {
+                this.connected = false;
+                this.connectionError = 'Error al cargar datos: ' + (prodRes.error || userRes.error || movRes.error).message;
+                return;
+            }
+            this.connected = true;
+            this.products = prodRes.data || [];
+            this.users = userRes.data || [];
+            this.movements = movRes.data || [];
+        },
+
+        // ---------- permisos por rol ----------
+        can(section) {
+            if (!this.currentUser) return false;
+            if (this.currentUser.rol === 'Administrador') return true;
+            return false; // Vendedor: solo dashboard, movimientos, consulta de stock
+        },
+
+        // ---------- sesión ----------
+        async login() {
+            this.loginError = '';
+            this.loading = true;
+            const { data, error } = await supabaseClient
+                .from('usuarios')
+                .select('*')
+                .ilike('username', this.loginForm.username.trim())
+                .eq('password', this.loginForm.password)
+                .maybeSingle();
+            this.loading = false;
+            if (error) { this.loginError = 'Error de conexión: ' + error.message; return; }
+            if (!data) { this.loginError = 'Usuario o contraseña incorrectos.'; return; }
+            if (data.estado !== 'Activo') { this.loginError = 'Este usuario se encuentra inactivo.'; return; }
+            this.currentUser = data;
+            this.loggedIn = true;
+            this.page = 'dashboard';
+            this.loginForm = { username: '', password: '' };
+            await this.loadAll();
+        },
+        logout() {
+            this.loggedIn = false;
+            this.currentUser = null;
+        },
+        initials(name) {
+            if (!name) return '';
+            return name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+        },
+        pageTitle() {
+            const map = { dashboard: 'Panel Principal', products: 'Productos', movements: 'Movimientos', stock_inquiry: 'Consulta de Stock', reports: 'Reportes', users: 'Usuarios' };
+            return map[this.page] || '';
+        },
+
+        // ---------- utilidades ----------
+        formatCLP(n) {
+            return '$' + Math.round(n || 0).toLocaleString('es-CL');
+        },
+        productName(id) {
+            const p = this.products.find(p => p.id === id);
+            return p ? p.nombre : '(producto eliminado)';
+        },
+        categories() {
+            return [...new Set(this.products.map(p => p.categoria))];
+        },
+        brands() {
+            return [...new Set(this.products.map(p => p.marca))];
+        },
+
+        // ---------- productos ----------
+        filteredProducts() {
+            const q = this.productSearch.trim().toLowerCase();
+            if (!q) return this.products;
+            return this.products.filter(p => p.nombre.toLowerCase().includes(q) || p.marca.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q));
+        },
+        lowStockProducts() {
+            return this.products.filter(p => p.stock <= p.stock_critico);
+        },
+        openAddProduct() {
+            this.editingProduct = null;
+            this.productForm = { nombre: '', marca: '', categoria: '', precio: 0, stock: 0, stock_critico: 5 };
+            this.productError = '';
+            this.showProductModal = true;
+        },
+        openEditProduct(p) {
+            this.editingProduct = p;
+            this.productForm = { ...p };
+            this.productError = '';
+            this.showProductModal = true;
+        },
+        async saveProduct() {
+            const f = this.productForm;
+            if (!f.nombre || !f.marca || !f.categoria) { this.productError = 'Complete nombre, marca y categoría.'; return; }
+            if (f.precio < 0 || f.stock < 0 || f.stock_critico < 0) { this.productError = 'Los valores numéricos no pueden ser negativos.'; return; }
+            this.loading = true;
+            const payload = { nombre: f.nombre, marca: f.marca, categoria: f.categoria, precio: f.precio, stock: f.stock, stock_critico: f.stock_critico };
+            let error;
+            if (this.editingProduct) {
+                ({ error } = await supabaseClient.from('productos').update(payload).eq('id', this.editingProduct.id));
+            } else {
+                ({ error } = await supabaseClient.from('productos').insert(payload));
+            }
+            if (error) { this.productError = error.message; this.loading = false; return; }
+            await this.loadAll();
+            this.loading = false;
+            this.showProductModal = false;
+        },
+
+        // ---------- movimientos ----------
+        async saveMovement() {
+            this.movementError = '';
+            const f = this.movementForm;
+            if (!f.producto_id) { this.movementError = 'Seleccione un producto.'; return; }
+            if (!f.cantidad || f.cantidad <= 0) { this.movementError = 'Ingrese una cantidad válida.'; return; }
+            if (!f.fecha) { this.movementError = 'Seleccione una fecha.'; return; }
+            const producto = this.products.find(p => p.id === f.producto_id);
+            if (!producto) { this.movementError = 'Producto no encontrado.'; return; }
+
+            this.loading = true;
+
+            if (this.editingMovementId) {
+                const original = this.movements.find(m => m.id === this.editingMovementId);
+                const prodOriginal = this.products.find(p => p.id === original.producto_id);
+                const revertedStock = prodOriginal ? prodOriginal.stock + (original.tipo === 'Entrada' ? -original.cantidad : original.cantidad) : null;
+                const baseStock = (prodOriginal && prodOriginal.id === producto.id) ? revertedStock : producto.stock;
+
+                if (f.tipo === 'Salida' && baseStock < f.cantidad) {
+                    this.movementError = 'Stock insuficiente para esta salida (disponible: ' + baseStock + ').';
+                    this.loading = false;
+                    return;
+                }
+                const newStock = baseStock + (f.tipo === 'Entrada' ? f.cantidad : -f.cantidad);
+
+                if (prodOriginal && prodOriginal.id !== producto.id) {
+                    await supabaseClient.from('productos').update({ stock: revertedStock }).eq('id', prodOriginal.id);
+                    await supabaseClient.from('productos').update({ stock: newStock }).eq('id', producto.id);
+                } else {
+                    await supabaseClient.from('productos').update({ stock: newStock }).eq('id', producto.id);
+                }
+                const { error } = await supabaseClient.from('movimientos').update({
+                    producto_id: f.producto_id, cantidad: f.cantidad, tipo: f.tipo, fecha: f.fecha
+                }).eq('id', this.editingMovementId);
+                if (error) { this.movementError = error.message; this.loading = false; return; }
+                this.cancelMovementEdit();
+                await this.loadAll();
+                this.loading = false;
+                return;
+            }
+
+            if (f.tipo === 'Salida' && producto.stock < f.cantidad) {
+                this.movementError = 'Stock insuficiente para esta salida (disponible: ' + producto.stock + ').';
+                this.loading = false;
+                return;
+            }
+            const newStock = producto.stock + (f.tipo === 'Entrada' ? f.cantidad : -f.cantidad);
+            await supabaseClient.from('productos').update({ stock: newStock }).eq('id', producto.id);
+            const { error } = await supabaseClient.from('movimientos').insert({
+                producto_id: f.producto_id, cantidad: f.cantidad, tipo: f.tipo, fecha: f.fecha, usuario: this.currentUser.nombre
+            });
+            if (error) { this.movementError = error.message; this.loading = false; return; }
+            this.movementForm = { producto_id: '', cantidad: '', tipo: 'Entrada', fecha: f.fecha };
+            await this.loadAll();
+            this.loading = false;
+        },
+        startMovementEdit(m) {
+            this.editingMovementId = m.id;
+            this.movementForm = { producto_id: m.producto_id, cantidad: m.cantidad, tipo: m.tipo, fecha: m.fecha };
+            this.movementError = '';
+        },
+        cancelMovementEdit() {
+            this.editingMovementId = null;
+            this.movementError = '';
+            this.movementForm = { producto_id: '', cantidad: '', tipo: 'Entrada', fecha: new Date().toISOString().slice(0, 10) };
+        },
+        recentMovements() {
+            return this.movements.slice().reverse().slice(0, 5);
+        },
+
+        // ---------- consulta de stock ----------
+        stockStatus(p) {
+            if (p.stock <= 0) return 'Crítico';
+            if (p.stock <= p.stock_critico) return 'Bajo';
+            return 'Suficiente';
+        },
+        stockStatusClass(p) {
+            const s = this.stockStatus(p);
+            return s === 'Suficiente' ? 'text-green-600' : s === 'Bajo' ? 'text-orange-500' : 'text-red-600';
+        },
+        stockFiltered() {
+            let list = this.products;
+            const q = this.stockSearch.trim().toLowerCase();
+            if (q) list = list.filter(p => p.nombre.toLowerCase().includes(q));
+            if (this.stockCategoryFilter !== 'Todas las Categorías') list = list.filter(p => p.categoria === this.stockCategoryFilter);
+            if (this.stockBrandFilter !== 'Todas las Marcas') list = list.filter(p => p.marca === this.stockBrandFilter);
+            if (this.stockLevelFilter !== 'Todos los Niveles') list = list.filter(p => this.stockStatus(p) === this.stockLevelFilter);
+            return list;
+        },
+
+        // ---------- reportes ----------
+        monthlySales() {
+            const now = new Date();
+            const ym = now.toISOString().slice(0, 7);
+            return this.movements
+                .filter(m => m.tipo === 'Salida' && m.fecha.startsWith(ym))
+                .reduce((sum, m) => {
+                    const p = this.products.find(p => p.id === m.producto_id);
+                    return sum + (p ? p.precio * m.cantidad : 0);
+                }, 0);
+        },
+        generateReport() {
+            this.reportError = '';
+            if (!this.reportFrom || !this.reportTo) { this.reportError = 'Seleccione ambas fechas.'; return; }
+            if (this.reportFrom > this.reportTo) { this.reportError = 'La fecha "desde" no puede ser posterior a la fecha "hasta".'; return; }
+            const ventas = this.movements.filter(m => m.tipo === 'Salida' && m.fecha >= this.reportFrom && m.fecha <= this.reportTo);
+            const byProduct = {};
+            ventas.forEach(m => {
+                const p = this.products.find(p => p.id === m.producto_id);
+                const nombre = p ? p.nombre : 'Producto eliminado';
+                const precio = p ? p.precio : 0;
+                if (!byProduct[nombre]) byProduct[nombre] = { nombre, unidades: 0, total: 0 };
+                byProduct[nombre].unidades += m.cantidad;
+                byProduct[nombre].total += m.cantidad * precio;
+            });
+            this.reportRows = Object.values(byProduct).sort((a, b) => b.total - a.total);
+            this.reportGenerated = true;
+        },
+        reportTotals() {
+            return this.reportRows.reduce((acc, r) => { acc.units += r.unidades; acc.revenue += r.total; return acc; }, { units: 0, revenue: 0 });
+        },
+        reportBarWidth(row) {
+            const max = Math.max(...this.reportRows.map(r => r.total), 1);
+            return Math.max((row.total / max) * 100, 4);
+        },
+        exportCSV() {
+            let csv = 'Producto,Unidades Vendidas,Total (CLP)\n';
+            this.reportRows.forEach(r => { csv += `"${r.nombre}",${r.unidades},${r.total}\n`; });
+            const totals = this.reportTotals();
+            csv += `TOTAL,${totals.units},${totals.revenue}\n`;
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `reporte_ventas_${this.reportFrom}_a_${this.reportTo}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        // ---------- usuarios ----------
+        filteredUsers() {
+            const q = this.userSearch.trim().toLowerCase();
+            if (!q) return this.users;
+            return this.users.filter(u => u.nombre.toLowerCase().includes(q) || u.username.toLowerCase().includes(q));
+        },
+        openAddUser() {
+            this.editingUser = null;
+            this.userForm = { nombre: '', username: '', password: '', rol: 'Vendedor', estado: 'Activo' };
+            this.userError = '';
+            this.showUserModal = true;
+        },
+        openEditUser(u) {
+            this.editingUser = u;
+            this.userForm = { ...u, password: '' };
+            this.userError = '';
+            this.showUserModal = true;
+        },
+        async saveUser() {
+            const f = this.userForm;
+            if (!f.nombre || !f.username) { this.userError = 'Complete nombre y usuario/correo.'; return; }
+            this.loading = true;
+            if (this.editingUser) {
+                const payload = { nombre: f.nombre, username: f.username, rol: f.rol, estado: f.estado };
+                if (f.password) payload.password = f.password;
+                const { error } = await supabaseClient.from('usuarios').update(payload).eq('id', this.editingUser.id);
+                if (error) { this.userError = error.message.includes('duplicate') ? 'Ya existe un usuario con ese correo.' : error.message; this.loading = false; return; }
+            } else {
+                if (!f.password) { this.userError = 'Ingrese una contraseña.'; this.loading = false; return; }
+                const { error } = await supabaseClient.from('usuarios').insert({ nombre: f.nombre, username: f.username, password: f.password, rol: f.rol, estado: f.estado });
+                if (error) { this.userError = error.message.includes('duplicate') ? 'Ya existe un usuario con ese correo.' : error.message; this.loading = false; return; }
+            }
+            await this.loadAll();
+            if (this.currentUser) {
+                const refreshed = this.users.find(u => u.id === this.currentUser.id);
+                if (refreshed) this.currentUser = refreshed;
+            }
+            this.loading = false;
+            this.showUserModal = false;
+        },
+
+        // ---------- eliminación genérica ----------
+        async performDelete() {
+            const d = this.confirmDelete;
+            if (!d) return;
+            this.loading = true;
+            if (d.type === 'product') {
+                await supabaseClient.from('productos').delete().eq('id', d.id);
+            } else if (d.type === 'movement') {
+                const m = this.movements.find(m => m.id === d.id);
+                if (m) {
+                    const p = this.products.find(p => p.id === m.producto_id);
+                    if (p) {
+                        const newStock = p.stock + (m.tipo === 'Entrada' ? -m.cantidad : m.cantidad);
+                        await supabaseClient.from('productos').update({ stock: newStock }).eq('id', p.id);
+                    }
+                }
+                await supabaseClient.from('movimientos').delete().eq('id', d.id);
+            } else if (d.type === 'user') {
+                if (this.currentUser.id === d.id) { this.confirmDelete = null; this.loading = false; return; }
+                await supabaseClient.from('usuarios').delete().eq('id', d.id);
+            }
+            await this.loadAll();
+            this.loading = false;
+            this.confirmDelete = null;
+        },
+    }
+}
+</script>
+
+</body>
+</html>
